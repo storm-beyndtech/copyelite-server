@@ -44,6 +44,7 @@ router.get("/reset-password/:email", async (req, res) => {
 // login user
 router.post("/login", async (req, res) => {
 	const { email, username, password } = req.body;
+	console.log(req.body);
 	const { error } = validateLogin(req.body);
 	if (error) return res.status(400).send({ message: error.details[0].message });
 
@@ -56,9 +57,14 @@ router.post("/login", async (req, res) => {
 		const validatePassword = await bcrypt.compare(password, user.password);
 		if (!validatePassword) return res.status(400).send({ message: "Invalid password" });
 
-		res.send({ user });
+		const otp = await new Otp({ email: user.email }).save();
+		const emailData = await otpMail(user.email, otp.code);
+		if (emailData.error) return res.status(400).send({ message: emailData.error });
+
+		res.send({ message: "success" });
 	} catch (error) {
 		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
+		console.log(e.errors[0].message);
 	}
 });
 
@@ -86,7 +92,7 @@ router.post("/signup", async (req, res) => {
 //create a new user
 router.post("/verify-otp", async (req, res) => {
 	const { username, email, password, referredBy, type } = req.body;
-
+	console.log(req.body);
 	try {
 		let user = await User.findOne({
 			$or: [{ email }, { username }],
@@ -101,13 +107,15 @@ router.post("/verify-otp", async (req, res) => {
 			user = new User({ username, email, password: hashedPassword, referredBy });
 			await user.save();
 
-			await welcomeMail(email);
+			console.log(req.body, "2");
+
+			await welcomeMail(user.email);
 			return res.send({ user });
 		}
 
 		if (type === "login-verification") {
 			if (!user) return res.status(400).send({ message: "User not found, please register" });
-
+			console.log(req.body, "2");
 			const validPassword = await bcrypt.compare(password, user.password);
 			if (!validPassword) return res.status(400).send({ message: "Invalid password" });
 
