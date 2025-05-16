@@ -63,10 +63,9 @@ router.post("/login", async (req, res) => {
 //sign up
 router.post("/signup", async (req, res) => {
 	const { username, email } = req.body;
-	console.log(req.body);
 
-	// const { error } = validateUser({ ...req.body, termsAccepted: undefined });
-	// if (error) return res.status(400).send({ message: error.details[0].message });
+	const { error } = validateUser(req.body);
+	if (error) return res.status(400).send({ message: error.details[0].message });
 
 	let user = await User.findOne({ $or: [{ email }, { username }] });
 	if (user) return res.status(400).send({ message: "username or email already exists, please login" });
