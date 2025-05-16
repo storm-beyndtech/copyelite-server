@@ -43,12 +43,14 @@ router.get("/reset-password/:email", async (req, res) => {
 
 // login user
 router.post("/login", async (req, res) => {
-	const { email, password } = req.body;
+	const { email, username, password } = req.body;
 	const { error } = validateLogin(req.body);
 	if (error) return res.status(400).send({ message: error.details[0].message });
 
 	try {
-		const user = await User.findOne({ email });
+		const user = await User.findOne({
+			$or: [{ email }, { username }],
+		});
 		if (!user) return res.status(400).send({ message: "user not found" });
 
 		const validatePassword = await bcrypt.compare(password, user.password);
@@ -83,28 +85,39 @@ router.post("/signup", async (req, res) => {
 
 //create a new user
 router.post("/verify-otp", async (req, res) => {
-	const { username, email, password, referredBy } = req.body;
+	const { username, email, password, referredBy, type } = req.body;
 
 	try {
-		let user = await User.findOne({ email });
-		console.log(req.body);
+		let user = await User.findOne({
+			$or: [{ email }, { username }],
+		});
 
-		if (!user) {
-			user = new User({ username, email, password, referredBy });
+		if (type === "register-verification") {
+			if (user) return res.status(400).send({ message: "User already exists, please login" });
+
 			const salt = await bcrypt.genSalt(10);
-			user.password = await bcrypt.hash(password, salt);
+			const hashedPassword = await bcrypt.hash(password, salt);
 
-			user = await user.save();
-			welcomeMail(email);
-			res.send({ user });
-		} else {
-			const validatePassword = await bcrypt.compare(password, user.password);
-			if (!validatePassword) return res.status(400).send({ message: "Invalid password" });
+			user = new User({ username, email, password: hashedPassword, referredBy });
+			await user.save();
 
-			res.send({ user });
+			await welcomeMail(email);
+			return res.send({ user });
 		}
+
+		if (type === "login-verification") {
+			if (!user) return res.status(400).send({ message: "User not found, please register" });
+
+			const validPassword = await bcrypt.compare(password, user.password);
+			if (!validPassword) return res.status(400).send({ message: "Invalid password" });
+
+			return res.send({ user });
+		}
+
+		return res.status(400).send({ message: "Invalid type. Must be 'register' or 'login'" });
 	} catch (e) {
-		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
+		console.error(e);
+		return res.status(500).send({ message: "Server error" });
 	}
 });
 
