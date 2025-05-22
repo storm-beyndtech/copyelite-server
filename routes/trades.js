@@ -2,8 +2,16 @@ import express from "express";
 import { Transaction } from "../models/transaction.js";
 import { User } from "../models/user.js";
 import mongoose from "mongoose";
+import { DemoTrade } from "../models/DemoTrade.js";
 
 const router = express.Router();
+
+function parseDuration(durationStr) {
+	const match = durationStr.match(/^(\d+)s$/);
+	if (!match) return 5000; // default to 5 seconds if invalid
+
+	return parseInt(match[1], 10) * 1000;
+}
 
 router.get("/", async (req, res) => {
 	try {
@@ -12,6 +20,65 @@ router.get("/", async (req, res) => {
 	} catch (error) {
 		console.error(error);
 		return res.status(500).send({ message: "Something Went Wrong..." });
+	}
+});
+
+// Get all demo trades for a user
+router.get("/demo-trades/:email", async (req, res) => {
+	try {
+		const { email } = req.params;
+		const trades = await DemoTrade.find({ email }).sort({ createdAt: -1 });
+
+		res.status(200).json({ trades });
+	} catch (error) {
+		res.status(500).json({ message: error.message });
+	}
+});
+
+router.post("/create-demo-trade", async (req, res) => {
+	try {
+		const { email, symbol, marketDirection, amount, duration, profit } = req.body;
+
+		const newTrade = await DemoTrade.create({
+			email,
+			symbol,
+			marketDirection,
+			amount,
+			duration,
+			profit,
+		});
+
+		res.status(201).json({ message: "Trade created", trade: newTrade });
+
+		const durationMs = parseDuration(duration);
+
+		setTimeout(async () => {
+			try {
+				const user = await User.findOne({ email });
+				if (!user) return;
+
+				const win = Math.random() > 0.5;
+				let updatedBalance;
+
+				if (win) {
+					updatedBalance = user.demo + profit;
+					console.log(`User ${email} won the trade. +${profit}`);
+				} else {
+					updatedBalance = user.demo - amount;
+					console.log(`User ${email} lost the trade. -${amount}`);
+				}
+
+				user.demo = updatedBalance;
+				await user.save();
+				console.log(`Demo balance updated to ${updatedBalance} for ${email}`);
+      } catch (err) {
+				console.error("Failed to update demo balance after trade:", err);
+        throw new Error("Failed to update demo balance after trade");
+        
+			}
+		}, durationMs);
+	} catch (error) {
+		res.status(500).json({ message: error.message });
 	}
 });
 
