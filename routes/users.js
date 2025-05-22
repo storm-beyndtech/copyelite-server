@@ -3,8 +3,40 @@ import express from "express";
 import { User, validateUser, validateLogin } from "../models/user.js";
 import { passwordReset, welcomeMail, otpMail } from "../utils/mailer.js";
 import { Otp } from "../models/otp.js";
+import speakeasy from "speakeasy";
+import qrcode from "qrcode";
+import { upload } from "./kycs.js";
 
 const router = express.Router();
+
+//Get QR Code For 2FA
+router.get("/getQrcode", async (req, res) => {
+	const secret = speakeasy.generateSecret({ name: "ameritrades" });
+
+	qrcode.toDataURL(secret.otpauth_url, (err, data) => {
+		res.send({ imgSrc: data, secret });
+	});
+});
+
+// GET /referrals/:username
+router.get("/referrals/:username", async (req, res) => {
+	const { username } = req.params;
+
+	try {
+		// Find all users referred by the given username
+		const referrals = await User.find({ referredBy: username }).select("username createdAt");
+
+		res.status(200).json(
+			referrals.map((ref) => ({
+				username: ref.username,
+				date: ref.createdAt,
+			})),
+		);
+	} catch (error) {
+		console.error("Error fetching referrals:", error);
+		res.status(500).json({ message: "Server error while fetching referrals." });
+	}
+});
 
 router.get("/:id", async (req, res) => {
 	try {
@@ -107,8 +139,6 @@ router.post("/verify-otp", async (req, res) => {
 			user = new User({ username, email, password: hashedPassword, referredBy });
 			await user.save();
 
-			console.log(req.body, "2");
-
 			await welcomeMail(user.email);
 			return res.send({ user });
 		}
@@ -162,17 +192,25 @@ router.put("/new-password", async (req, res) => {
 	}
 });
 
-router.put("/update-profile", async (req, res) => {
-	let user = await User.findOne({ email: req.body.email });
+router.put("/update-profile", upload.single("profileImage"), async (req, res) => {
+	const { email, ...rest } = req.body;
+
+	let user = await User.findOne({ email });
 	if (!user) return res.status(404).send({ message: "User not found" });
 
 	try {
-		user.set(req.body);
+		if (req.file) {
+			rest.profileImage = req.file.path;
+		}
 
+		user.set(rest);
 		user = await user.save();
+
 		res.send({ user });
 	} catch (e) {
-		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
+		for (const i in e.errors) {
+			return res.status(500).send({ message: e.errors[i].message });
+		}
 	}
 });
 
@@ -230,6 +268,31 @@ router.put("/update-user-trader", async (req, res) => {
 	} catch (error) {
 		console.error("Error updating traderId:", error);
 		return res.status(500).json({ message: "Internal server error" });
+	}
+});
+
+// Veryify 2FA for user
+router.post("/verifyToken", async (req, res) => {
+	const { token, secret, email } = req.body;
+
+	let user = await User.findOne({ email });
+	if (!user) return res.status(400).send({ message: "Invalid email" });
+
+	try {
+		const verify = speakeasy.totp.verify({
+			secret,
+			encoding: "ascii",
+			token,
+		});
+
+		if (!verify) throw new Error("Invalid token");
+		else {
+			user.mfa = true;
+			user = await user.save();
+			res.send({ message: "Your Account Multi Factor Authentication is Now on" });
+		}
+	} catch (error) {
+		return res.status(500).send({ message: "Something Went Wrong..." });
 	}
 });
 
