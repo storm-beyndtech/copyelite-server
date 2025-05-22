@@ -198,10 +198,10 @@ router.post("/resend-otp", async (req, res) => {
 
 //Change password
 router.put("/change-password", async (req, res) => {
-	const { currentPassword, newPassword } = req.body;
+	const { currentPassword, newPassword, id } = req.body;
 
 	try {
-		const user = await User.findById(req.user._id);
+		const user = await User.findById(id);
 		if (!user) return res.status(404).send({ message: "User not found" });
 
 		const validPassword = await bcrypt.compare(currentPassword, user.password);
