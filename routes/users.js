@@ -5,7 +5,29 @@ import { passwordReset, welcomeMail, otpMail } from "../utils/mailer.js";
 import { Otp } from "../models/otp.js";
 import speakeasy from "speakeasy";
 import qrcode from "qrcode";
-import { upload } from "./kycs.js";
+
+import multer from "multer";
+import { v2 as cloudinary } from "cloudinary";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+
+// Configure Cloudinary
+cloudinary.config({
+	cloud_name: process.env.CLOUD_NAME,
+	api_key: process.env.CLOUD_API_KEY,
+	api_secret: process.env.CLOUD_API_SECRET,
+});
+
+// Configure Multer with Cloudinary storage
+const storage = new CloudinaryStorage({
+	cloudinary: cloudinary,
+	params: {
+		folder: "profile",
+		allowed_formats: ["jpg", "jpeg", "png", "gif"],
+		transformation: [{ width: 500, height: 500, crop: "limit" }],
+	},
+});
+
+export const upload = multer({ storage: storage });
 
 const router = express.Router();
 
@@ -171,6 +193,28 @@ router.post("/resend-otp", async (req, res) => {
 		res.send({ message: "success" });
 	} catch (e) {
 		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
+	}
+});
+
+//Change password
+router.put("/change-password", async (req, res) => {
+	const { currentPassword, newPassword } = req.body;
+
+	try {
+		const user = await User.findById(req.user._id);
+		if (!user) return res.status(404).send({ message: "User not found" });
+
+		const validPassword = await bcrypt.compare(currentPassword, user.password);
+		if (!validPassword) return res.status(400).send({ message: "Current password is incorrect" });
+
+		const salt = await bcrypt.genSalt(10);
+		user.password = await bcrypt.hash(newPassword, salt);
+		await user.save();
+
+		res.send({ message: "Password changed successfully" });
+	} catch (err) {
+		console.error(err);
+		res.status(500).send({ message: "Server error" });
 	}
 });
 

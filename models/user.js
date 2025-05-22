@@ -105,7 +105,7 @@ export const userSchema = new mongoose.Schema({
 	profileImage: {
 		type: String,
 		default: "",
-		maxLength: 50,
+		maxLength: 500,
 	},
 	isAdmin: {
 		type: Boolean,
