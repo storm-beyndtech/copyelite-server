@@ -69,7 +69,7 @@ export async function otpMail(userEmail, otp) {
         </p>
         <p>
           If you have questions or need assistance, reach out 
-          to our support team at support@interactivecopyelite.com.
+          to our support team at support@interactive-copyelite.com.
         </p>
         <p>Best regards</p>
         <p>The Copyelite Team</p>
@@ -99,12 +99,12 @@ export async function passwordReset(userEmail) {
           A request was sent for password reset, if this wasn't you please
           contact our customer service. Click the reset link below to proceed
         </p>
-        <a href="https://www.interactivecopyelite.com/reset-password/newPassword">
+        <a href="https://www.interactive-copyelite.com/reset-password/newPassword">
           Reset Password
         </a>
         <p>
           If you have questions or need assistance, reach out 
-          to our support team at support@interactivecopyelite.com.
+          to our support team at support@interactive-copyelite.com.
         </p>
         <p>Best regards</p>
         <p>The Copyelite Team</p>
@@ -163,7 +163,7 @@ export async function depositMail(fullName, amount, date, email) {
         </p>
         <p>
           If you have questions or need assistance, reach out 
-          to our support team at support@interactivecopyelite.com.
+          to our support team at support@interactive-copyelite.com.
         </p>
         <p>Best regards</p>
         <p>The Copyelite Team</p>
@@ -196,7 +196,7 @@ export async function withdrawalMail(fullName, amount, date, email) {
         </p>
         <p>
           If you have questions or need assistance, reach out 
-          to our support team at support@interactivecopyelite.com.
+          to our support team at support@interactive-copyelite.com.
         </p>
         <p>Best regards</p>
         <p>The Copyelite Team</p>
@@ -227,7 +227,7 @@ export async function multiMails(emails, subject, message) {
         </p>
         <p>
           If you have questions or need assistance, reach out 
-          to our support team at support@interactivecopyelite.com.
+          to our support team at support@interactive-copyelite.com.
         </p>
         <p>Best regards</p>
         <p>The Copyelite Team</p>
@@ -245,5 +245,36 @@ export async function multiMails(emails, subject, message) {
 		return result;
 	} catch (error) {
 		return { error: error instanceof Error && error.message };
+	}
+}
+
+// customer support mail
+export async function sendContactUsMail({ name, email, subject, message }) {
+	try {
+		// Compose the email body content
+		const bodyContent = `
+      <td style="padding: 20px; line-height: 1.8;">
+        <p><strong>From:</strong> ${name} &lt;${email}&gt;</p>
+        <p><strong>Subject:</strong> ${subject}</p>
+        <p><strong>Message:</strong></p>
+        <p>${message.replace(/\n/g, "<br>")}</p>
+      </td>
+    `;
+
+		// Email options
+		const mailOptions = {
+			from: `Copyelite <${process.env.SMTP_USER}>`,
+			to: process.env.SMTP_USER || "support@interactive-copyelite.com",
+			subject: `New Contact Us Message: ${subject}`,
+			html: emailTemplate(bodyContent),
+		};
+
+		// Send the email
+		const result = await sendMailWithRetry(mailOptions);
+
+		return result;
+	} catch (error) {
+		console.error("Error sending contact us mail:", error);
+		return { error: error instanceof Error ? error.message : String(error) };
 	}
 }
