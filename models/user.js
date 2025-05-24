@@ -68,9 +68,6 @@ export const userSchema = new mongoose.Schema({
 
 	password: {
 		type: String,
-		required: true,
-		minLength: 5,
-		maxLength: 1000,
 	},
 	deposit: {
 		type: Number,
@@ -119,6 +116,10 @@ export const userSchema = new mongoose.Schema({
 		type: Boolean,
 		default: false,
 	},
+	isGoogleUser: {
+		type: Boolean,
+		default: false,
+	},
 	createdAt: {
 		type: Date,
 		default: Date.now,
@@ -143,7 +144,10 @@ userSchema.methods.genAuthToken = function () {
 };
 
 userSchema.pre("save", function (next) {
-	this.fullName = `${this.firstName && this.firstName} ${this.lastName && this.lastName}`;
+	const names = [];
+	if (this.firstName) names.push(this.firstName);
+	if (this.lastName) names.push(this.lastName);
+	this.fullName = names.join(" ");
 	next();
 });
 

@@ -9,6 +9,7 @@ import qrcode from "qrcode";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
+import { googleLogin } from "../utils/googleLoginController.js";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -122,7 +123,10 @@ router.post("/login", async (req, res) => {
 	}
 });
 
-//sign up
+//google sign up
+router.post("/google", googleLogin)
+
+//Sign up
 router.post("/signup", async (req, res) => {
 	const { username, email } = req.body;
 
@@ -146,7 +150,6 @@ router.post("/signup", async (req, res) => {
 //create a new user
 router.post("/verify-otp", async (req, res) => {
 	const { username, email, password, referredBy, type } = req.body;
-	console.log(req.body);
 	try {
 		let user = await User.findOne({
 			$or: [{ email }, { username }],
@@ -167,7 +170,6 @@ router.post("/verify-otp", async (req, res) => {
 
 		if (type === "login-verification") {
 			if (!user) return res.status(400).send({ message: "User not found, please register" });
-			console.log(req.body, "2");
 			const validPassword = await bcrypt.compare(password, user.password);
 			if (!validPassword) return res.status(400).send({ message: "Invalid password" });
 
