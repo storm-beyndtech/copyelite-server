@@ -99,7 +99,6 @@ router.get("/reset-password/:email", async (req, res) => {
 // login user
 router.post("/login", async (req, res) => {
 	const { email, username, password } = req.body;
-	console.log(req.body);
 	const { error } = validateLogin(req.body);
 	if (error) return res.status(400).send({ message: error.details[0].message });
 
@@ -109,14 +108,10 @@ router.post("/login", async (req, res) => {
 		});
 		if (!user) return res.status(400).send({ message: "user not found" });
 
-		const validatePassword = await bcrypt.compare(password, user.password);
+		const validatePassword = bcrypt.compare(password, user.password);
 		if (!validatePassword) return res.status(400).send({ message: "Invalid password" });
 
-		const otp = await new Otp({ email: user.email }).save();
-		const emailData = await otpMail(user.email, otp.code);
-		if (emailData.error) return res.status(400).send({ message: emailData.error });
-
-		res.send({ message: "success" });
+		res.send({ message: "success", user });
 	} catch (error) {
 		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
 		console.log(e.errors[0].message);
@@ -124,7 +119,7 @@ router.post("/login", async (req, res) => {
 });
 
 //google sign up
-router.post("/google", googleLogin)
+router.post("/google", googleLogin);
 
 //Sign up
 router.post("/signup", async (req, res) => {
@@ -170,7 +165,7 @@ router.post("/verify-otp", async (req, res) => {
 
 		if (type === "login-verification") {
 			if (!user) return res.status(400).send({ message: "User not found, please register" });
-			const validPassword = await bcrypt.compare(password, user.password);
+			const validPassword = bcrypt.compare(password, user.password);
 			if (!validPassword) return res.status(400).send({ message: "Invalid password" });
 
 			return res.send({ user });
