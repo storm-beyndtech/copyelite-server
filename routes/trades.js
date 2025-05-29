@@ -22,7 +22,14 @@ router.get("/user/:userId/trader/:traderId", async (req, res) => {
 	try {
 		const { userId, traderId } = req.params;
 
-		if (!userId || !traderId) return res.status(403).send({ message: "User and Trader ID Required" });
+		// Validate ObjectIds
+		if (!userId || userId === "null" || userId === "undefined") {
+			return res.status(400).send({ message: "Invalid user ID" });
+		}
+
+		if (!traderId || traderId === "null" || traderId === "undefined") {
+			return res.status(400).send({ message: "Invalid trader ID" });
+		}
 
 		// Get user's createdAt date
 		const user = await User.findById(userId);
