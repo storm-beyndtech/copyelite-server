@@ -18,7 +18,7 @@ const traderSchema = new mongoose.Schema({
 	specialization: {
 		type: String,
 		required: [true, "Trading specialization is required"],
-		enum: ["Forex", "Crypto", "Stocks", "Commodities", "Options", "Mixed"],
+		enum: ["Forex", "Crypto", "Stocks", "Commodities", "Options", "Indices", "Mixed"],
 	},
 	experience: {
 		type: Number,

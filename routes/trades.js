@@ -3,15 +3,9 @@ import { Transaction } from "../models/transaction.js";
 import { User } from "../models/user.js";
 import mongoose from "mongoose";
 import { DemoTrade } from "../models/DemoTrade.js";
+import { Trader } from "../models/trader.js";
 
 const router = express.Router();
-
-function parseDuration(durationStr) {
-	const match = durationStr.match(/^(\d+)s$/);
-	if (!match) return 5000; // default to 5 seconds if invalid
-
-	return parseInt(match[1], 10) * 1000;
-}
 
 router.get("/", async (req, res) => {
 	try {
@@ -20,6 +14,39 @@ router.get("/", async (req, res) => {
 	} catch (error) {
 		console.error(error);
 		return res.status(500).send({ message: "Something Went Wrong..." });
+	}
+});
+
+//Get user trades
+router.get("/user/:userId/trader/:traderId", async (req, res) => {
+	try {
+		const { userId, traderId } = req.params;
+
+		if (!userId || !traderId) return res.status(403).send({ message: "User and Trader ID Required" });
+
+		// Get user's createdAt date
+		const user = await User.findById(userId);
+		if (!user) {
+			return res.status(404).send({ message: "User not found" });
+		}
+
+		// Get trader to access their category
+		const trader = await Trader.findById(traderId);
+		if (!trader) {
+			return res.status(404).send({ message: "Trader not found" });
+		}
+
+		// Filter trades by trader's category and user creation date
+		const trades = await Transaction.find({
+			type: "trade",
+			"tradeData.category": trader.specialization,
+			date: { $gte: user.createdAt },
+		});
+
+		res.send(trades);
+	} catch (error) {
+		console.error(error);
+		return res.status(500).send({ message: "Something went wrong..." });
 	}
 });
 
@@ -48,35 +75,24 @@ router.post("/create-demo-trade", async (req, res) => {
 			profit,
 		});
 
-		res.status(201).json({ message: "Trade created", trade: newTrade });
+		// Execute trade immediately
+		const user = await User.findOne({ email });
+		if (!user) {
+			return res.status(404).json({ message: "User not found" });
+		}
 
-		const durationMs = parseDuration(duration);
+		const win = Math.random() > 0.5;
+		const updatedBalance = win ? user.demo + profit : user.demo - amount;
 
-		setTimeout(async () => {
-			try {
-				const user = await User.findOne({ email });
-				if (!user) return;
+		user.demo = updatedBalance;
+		await user.save();
 
-				const win = Math.random() > 0.5;
-				let updatedBalance;
-
-				if (win) {
-					updatedBalance = user.demo + profit;
-					console.log(`User ${email} won the trade. +${profit}`);
-				} else {
-					updatedBalance = user.demo - amount;
-					console.log(`User ${email} lost the trade. -${amount}`);
-				}
-
-				user.demo = updatedBalance;
-				await user.save();
-				console.log(`Demo balance updated to ${updatedBalance} for ${email}`);
-      } catch (err) {
-				console.error("Failed to update demo balance after trade:", err);
-        throw new Error("Failed to update demo balance after trade");
-        
-			}
-		}, durationMs);
+		res.status(201).json({
+			message: "Trade created and executed",
+			trade: newTrade,
+			result: win ? "win" : "loss",
+			newBalance: updatedBalance,
+		});
 	} catch (error) {
 		res.status(500).json({ message: error.message });
 	}
@@ -84,11 +100,11 @@ router.post("/create-demo-trade", async (req, res) => {
 
 // making a trade
 router.post("/", async (req, res) => {
-	const { package: plan, interest } = req.body;
+	const { symbol, interest, category } = req.body;
 
 	try {
 		const trade = new Transaction({
-			tradeData: { package: plan, interest },
+			tradeData: { package: symbol, interest, category },
 			type: "trade",
 			amount: 0,
 		});
