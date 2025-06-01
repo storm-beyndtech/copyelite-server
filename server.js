@@ -36,8 +36,6 @@ mongoose
 	.then(() => console.log("Connected to MongoDB..."))
 	.catch((e) => console.error("Error connecting to MongoDB:", e));
 
-import cors from "cors";
-
 const allowedOrigins = [
 	"https://interactive-copyelite.com",
 	"https://www.interactive-copyelite.com",
