@@ -31,10 +31,10 @@ export const Kyc = mongoose.model("Kyc", kycSchema);
 // validate Kyc
 export function validateKyc(kyc) {
 	const schema = Joi.object({
-		name: Joi.string().min(5).max(225).required(),
+		name: Joi.string().min(3).max(225).required(),
 		email: Joi.string().email().min(5).max(225).required(),
 		documentNumber: Joi.string().min(3).max(50).required(),
-		documentExpDate: Joi.string().required(), // optionally add pattern for date
+		documentExpDate: Joi.string().required(),
 	});
 	return schema.validate(kyc);
 }
