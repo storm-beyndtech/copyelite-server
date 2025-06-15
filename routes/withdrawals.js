@@ -1,7 +1,7 @@
 import express from "express";
 import { Transaction } from "../models/transaction.js";
 import { User } from "../models/user.js";
-import { alertAdmin, withdrawalMail } from "../utils/mailer.js";
+import { alertAdmin, pendingWithdrawalMail, withdrawalMail } from "../utils/mailer.js";
 
 const router = express.Router();
 
@@ -82,7 +82,10 @@ router.post("/", async (req, res) => {
 		const type = transaction.type;
 		const email = transaction.user.email;
 
-		const emailData = await alertAdmin(email, amount, date, type);
+		const emailDataForAdmin = await alertAdmin(email, amount, date, type);
+		if (emailDataForAdmin.error) return res.status(400).send({ message: emailDataForAdmin.error });
+
+		const emailData = await pendingWithdrawalMail(user.fullName, amount, date, email);
 		if (emailData.error) return res.status(400).send({ message: emailData.error });
 
 		res.send({ message: "Withdraw successful and pending approval..." });
@@ -97,7 +100,7 @@ router.put("/:id", async (req, res) => {
 	const { email, amount, status } = req.body;
 
 	let withdrawal = await Transaction.findById(id);
-	if (!withdrawal) return res.status(404).send({ message: "Deposit not found" });
+	if (!withdrawal) return res.status(404).send({ message: "Withdrawal not found" });
 
 	let user = await User.findOne({ email });
 	if (!user) return res.status(400).send({ message: "Something went wrong" });
@@ -106,7 +109,20 @@ router.put("/:id", async (req, res) => {
 		withdrawal.status = status;
 
 		if (status === "success") {
-			user.deposit -= amount;
+			const totalAvailable = user.deposit + user.interest;
+
+			if (amount > totalAvailable) {
+				throw new Error("Insufficient funds");
+			}
+
+			if (amount <= user.deposit) {
+				user.deposit -= amount;
+			} else {
+				const remaining = amount - user.deposit;
+				user.deposit = 0;
+				user.interest -= remaining;
+			}
+
 			user.withdraw += amount;
 		}
 
