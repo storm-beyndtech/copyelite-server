@@ -5,9 +5,7 @@ import mongoose from "mongoose";
 const kycSchema = new mongoose.Schema({
 	name: {
 		type: String,
-		required: true,
-		minLength: 5,
-		maxLength: 225,
+		default: "",
 	},
 	email: {
 		type: String,
@@ -31,7 +29,7 @@ export const Kyc = mongoose.model("Kyc", kycSchema);
 // validate Kyc
 export function validateKyc(kyc) {
 	const schema = Joi.object({
-		name: Joi.string().min(3).max(225).required(),
+		name: Joi.string().allow("").optional(),
 		email: Joi.string().email().min(5).max(225).required(),
 		documentNumber: Joi.string().min(3).max(50).required(),
 		documentExpDate: Joi.string().required(),
