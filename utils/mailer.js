@@ -183,14 +183,16 @@ export async function pendingDepositMail(fullName, amount, date, email) {
 }
 
 // deposit mail
-export async function depositMail(fullName, amount, date, email) {
+export async function depositMail(fullName, amount, date, email, rejected = false) {
 	try {
 		let bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <p>Dear ${fullName}</p>
         <p>
           Your deposit of <strong>${amount}</strong>, ${date}, was 
-          successful! Your can now use your funds to trade on Copyelite.
+          ${rejected ? "unsuccessful" : "successful"}. ${
+			rejected ? "Please try again later." : "You can now use your funds to trade on Copyelite."
+		}
         </p>
         <p>
           If you have questions or need assistance, reach out 
@@ -247,14 +249,16 @@ export async function pendingWithdrawalMail(fullName, amount, date, email) {
 }
 
 // withdrawal mail
-export async function withdrawalMail(fullName, amount, date, email) {
+export async function withdrawalMail(fullName, amount, date, email, rejected = false) {
 	try {
 		let bodyContent = `
       <td style="padding: 20px; line-height: 1.8;">
         <p>Dear ${fullName}</p>
         <p>
           Your Withdrawal of <strong>${amount}</strong>, 
-          ${date}, was successful! Thanks for choosing Copyelite!
+          ${date}, was ${rejected ? "rejected" : "successful"}! ${
+			rejected ? "Please try again later." : "Thank you for using Copyelite!"
+		}
         </p>
         <p>
           If you have questions or need assistance, reach out 
@@ -374,7 +378,6 @@ export async function kycPendingMail(fullName, email) {
 	}
 }
 
-
 export async function kycApprovedMail(fullName, email) {
 	try {
 		let bodyContent = `
@@ -406,4 +409,3 @@ export async function kycApprovedMail(fullName, email) {
 		return { error: error instanceof Error && error.message };
 	}
 }
-
