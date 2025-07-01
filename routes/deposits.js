@@ -94,13 +94,15 @@ router.put("/:id", async (req, res) => {
 	const { email, amount, status } = req.body;
 
 	let deposit = await Transaction.findById(id);
-	if (!deposit) return res.status(404).send({ message: "Deposit not found" });
-
+  if (!deposit) return res.status(404).send({ message: "Deposit not found" });
+  
+  
 	let user = await User.findOne({ email });
 	if (!user) return res.status(400).send({ message: "Something went wrong" });
-
+  
 	try {
-		deposit.status = status;
+    console.log(status)
+    deposit.status = status;
 
 		if (status === "success") {
 			user.deposit += amount;
