@@ -17,6 +17,6 @@ primary_region = 'ord'
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
+  memory = '256gb'
   cpu_kind = 'shared'
   cpus = 1
