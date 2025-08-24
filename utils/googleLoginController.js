@@ -1,8 +1,10 @@
 import { OAuth2Client } from "google-auth-library";
 import { welcomeMail } from "./mailer.js";
 import { User } from "../models/user.js";
+import jwt from "jsonwebtoken";
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 
 export const googleLogin = async (req, res) => {
 	const { token } = req.body;
@@ -36,7 +38,13 @@ export const googleLogin = async (req, res) => {
 			await welcomeMail(user.email);
 		}
 
-		res.json({ user });
+		const jwtToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "1h" });
+
+		if (user.mfa) {
+			return res.send({ user, requires2FA: true, token: jwtToken });
+		}
+
+		res.json({ user, token: jwtToken });
 	} catch (error) {
 		console.error(error);
 		res.status(401).json({ message: "Invalid Google token" });

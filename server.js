@@ -13,6 +13,7 @@ import tradesRoutes from "./routes/trades.js";
 import traderRoutes from "./routes/traders.js";
 import utilsRoutes from "./routes/utils.js";
 import kycsRoutes from "./routes/kycs.js";
+import mfaRoutes from "./routes/mfa.js";
 import rateLimit from "express-rate-limit";
 
 const app = express();
@@ -82,6 +83,7 @@ app.use("/api/trades", tradesRoutes);
 app.use("/api/trader", traderRoutes);
 app.use("/api/utils", utilsRoutes);
 app.use("/api/kycs", kycsRoutes);
+app.use("/api/mfa", mfaRoutes);
 
 // Listening to port
 const PORT = process.env.PORT || 3000;

@@ -145,6 +145,9 @@ export const userSchema = new mongoose.Schema({
 		ref: "Trader",
 		default: null,
 	},
+	twoFactorSecret: { type: String, default: null },
+	tempTwoFactorSecret: { type: String, default: null },
+	tempTwoFactorSecretExpires: { type: Date, default: null },
 });
 
 userSchema.methods.genAuthToken = function () {

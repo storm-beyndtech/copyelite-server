@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import express from "express";
+import jwt from "jsonwebtoken";
 import { User, validateUser, validateLogin } from "../models/user.js";
 import { passwordReset, welcomeMail, otpMail } from "../utils/mailer.js";
 import { Otp } from "../models/otp.js";
@@ -31,6 +32,7 @@ const storage = new CloudinaryStorage({
 
 export const upload = multer({ storage: storage });
 
+const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 const router = express.Router();
 
 //Get QR Code For 2FA
@@ -116,7 +118,13 @@ router.post("/login", async (req, res) => {
 		const isMatch = await bcrypt.compare(password, user.password);
 		if (!isMatch) return res.status(400).send({ message: "Invalid password" });
 
-		res.send({ message: "success", user });
+		const jwtToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "1h" });
+
+		if (user.mfa) {
+			return res.send({ user, requires2FA: true, token: jwtToken });
+		}
+
+		res.send({ user, message: "Login successful", token: jwtToken });
 	} catch (e) {
 		console.error(e);
 		res.status(500).send({ message: "Internal server error" });
