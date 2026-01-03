@@ -2,11 +2,13 @@ import express from "express";
 import { Transaction } from "../models/transaction.js";
 import { User } from "../models/user.js";
 import { alertAdmin, depositMail, pendingDepositMail } from "../utils/mailer.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 
 // getting all deposits
-router.get("/", async (req, res) => {
+router.get("/", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const deposits = await Transaction.find({ type: "deposit" });
 		res.send(deposits);
@@ -16,11 +18,14 @@ router.get("/", async (req, res) => {
 });
 
 // get all deposits by user
-router.get("/user/:email", async (req, res) => {
+router.get("/user/:email", authenticate, async (req, res) => {
 	const { email } = req.params;
 
 	try {
-		const deposits = await Transaction.find({ "user.email": email });
+		const isSelf = req.user?.email === email;
+		if (!isSelf && !req.user?.isAdmin) return res.status(403).send({ message: "Unauthorized" });
+
+		const deposits = await Transaction.find({ "user.email": email, type: "deposit" });
 		if (!deposits || deposits.length === 0) return res.status(400).send({ message: "Deposits not found..." });
 		res.send(deposits);
 	} catch (e) {
@@ -29,11 +34,14 @@ router.get("/user/:email", async (req, res) => {
 });
 
 // making a deposit
-router.post("/", async (req, res) => {
+router.post("/", authenticate, async (req, res) => {
 	const { id, amount, convertedAmount, coinName } = req.body;
 
 	const user = await User.findById(id);
 	if (!user) return res.status(400).send({ message: "Something went wrong" });
+
+	const isSelf = req.user && req.user._id?.toString() === id;
+	if (!isSelf && !req.user?.isAdmin) return res.status(403).send({ message: "Unauthorized" });
 
 	// Check if there's any pending deposit for the user
 	const pendingDeposit = await Transaction.findOne({
@@ -74,6 +82,14 @@ router.post("/", async (req, res) => {
 		const emailData = await pendingDepositMail(user.fullName, amount, date, email);
 		if (emailData.error) return res.status(400).send({ message: emailData.error });
 
+		await logActivity(req, {
+			actor: req.user,
+			action: "deposit_create",
+			target: { type: "Transaction", id: transaction._id },
+			metadata: { amount, coinName },
+			notifyAdmin: false,
+		});
+
 		res.send({ message: "Deposit successful and pending approval..." });
 	} catch (e) {
 		for (i in e.errors) res.status(500).send({ message: e.errors[i].message });
@@ -81,28 +97,39 @@ router.post("/", async (req, res) => {
 });
 
 // POST /users/reset-demo-balance
-router.post("/reset-demo-balance", async (req, res) => {
+router.post("/reset-demo-balance", authenticate, async (req, res) => {
 	const { email } = req.body;
-	// Update demo balance in DB
+
+	const isSelf = req.user?.email === email;
+	if (!isSelf && !req.user?.isAdmin) return res.status(403).json({ message: "Unauthorized" });
+
 	await User.updateOne({ email }, { demo: 10000 });
+
+	await logActivity(req, {
+		actor: req.user,
+		action: "reset_demo_balance",
+		target: { type: "User", id: email },
+		metadata: { email },
+		notifyAdmin: req.user?.isAdmin,
+	});
+
 	res.status(200).json({ message: "Demo balance topped up" });
 });
 
 // updating a deposit
-router.put("/:id", async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, async (req, res) => {
 	const { id } = req.params;
 	const { email, amount, status } = req.body;
 
 	let deposit = await Transaction.findById(id);
-  if (!deposit) return res.status(404).send({ message: "Deposit not found" });
-  
-  
+	if (!deposit) return res.status(404).send({ message: "Deposit not found" });
+
 	let user = await User.findOne({ email });
 	if (!user) return res.status(400).send({ message: "Something went wrong" });
-  
+
 	try {
-    console.log(status)
-    deposit.status = status;
+		console.log(status);
+		deposit.status = status;
 
 		if (status === "success") {
 			user.deposit += amount;
@@ -112,12 +139,20 @@ router.put("/:id", async (req, res) => {
 		deposit = await deposit.save();
 
 		const { fullName, email } = user;
-    const { date } = deposit;
+		const { date } = deposit;
 
-    const isRejected = status === "success" ? false : true;
+		const isRejected = status === "success" ? false : true;
 
 		const emailData = await depositMail(fullName, amount, date, email, isRejected);
 		if (emailData.error) return res.status(400).send({ message: emailData.error });
+
+		await logActivity(req, {
+			actor: req.user,
+			action: "deposit_status_update",
+			target: { type: "Transaction", id: deposit._id },
+			metadata: { status, amount, email },
+			notifyAdmin: false,
+		});
 
 		res.send({ message: "Deposit successfully updated" });
 	} catch (e) {

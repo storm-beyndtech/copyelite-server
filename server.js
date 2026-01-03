@@ -14,10 +14,13 @@ import traderRoutes from "./routes/traders.js";
 import utilsRoutes from "./routes/utils.js";
 import kycsRoutes from "./routes/kycs.js";
 import mfaRoutes from "./routes/mfa.js";
+import activityLogsRoutes from "./routes/activityLogs.js";
 import rateLimit from "express-rate-limit";
+import { getJwtSecret } from "./utils/jwt.js";
 
 const app = express();
 const server = http.createServer(app);
+app.set("trust proxy", true);
 
 // Verify transporter
 (async function verifyTP() {
@@ -25,8 +28,8 @@ const server = http.createServer(app);
 })();
 
 // Checking for required ENV variables
-if (!process.env.JWT_PRIVATE_KEY) {
-	console.error("Fatal Error: jwtPrivateKey is required");
+if (!getJwtSecret()) {
+	console.error("Fatal Error: JWT secret/private key is required");
 	process.exit(1);
 }
 
@@ -84,6 +87,7 @@ app.use("/api/trader", traderRoutes);
 app.use("/api/utils", utilsRoutes);
 app.use("/api/kycs", kycsRoutes);
 app.use("/api/mfa", mfaRoutes);
+app.use("/api/activity-logs", activityLogsRoutes);
 
 // Listening to port
 const PORT = process.env.PORT || 3000;

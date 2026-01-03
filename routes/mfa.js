@@ -1,21 +1,25 @@
 import express from "express";
 import speakeasy from "speakeasy";
 import qrcode from "qrcode";
-import jwt from "jsonwebtoken";
 import rateLimit from "express-rate-limit";
 import { User } from "../models/user.js";
+import { signJwt, verifyJwt } from "../utils/jwt.js";
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret"; // Store in .env
+const getTokenFromRequest = (req) => {
+	const authHeader = req.headers.authorization || "";
+	if (authHeader.startsWith("Bearer ")) return authHeader.replace("Bearer ", "").trim();
+	return req.headers["x-auth-token"] || req.headers.token || req.body?.token || null;
+};
 
 // Middleware to verify JWT
 const verifyToken = async (req, res, next) => {
-	const token = req.headers.authorization?.split(" ")[1];
+	const token = getTokenFromRequest(req);
 	if (!token) {
 		return res.status(401).json({ message: "No token provided" });
 	}
 	try {
-		const decoded = jwt.verify(token, JWT_SECRET);
+		const decoded = verifyJwt(token);
 		const user = await User.findById(decoded.userId);
 		if (!user) {
 			return res.status(401).json({ message: "Unauthorized" });
@@ -98,7 +102,7 @@ router.post("/verifyToken", verifyToken, async (req, res) => {
 		user.mfa = true;
 		await user.save();
 
-		const jwtToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "1h" });
+		const jwtToken = signJwt({ userId: user._id }, { expiresIn: "1h" });
 		res.json({ message: "2FA enabled successfully", token: jwtToken });
 	} catch (error) {
 		res.status(500).json({ message: "Server error" });
@@ -130,7 +134,7 @@ router.post('/disable', verifyToken, async (req, res) => {
     user.twoFactorSecret = null;
     await user.save();
 
-    const jwtToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '1h' });
+    const jwtToken = signJwt({ userId: user._id }, { expiresIn: '1h' });
     res.json({ message: '2FA disabled successfully', token: jwtToken });
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
@@ -158,7 +162,7 @@ router.post("/verifyLogin2FA", verifyToken, async (req, res) => {
 			return res.status(400).json({ message: "Invalid 2FA token" });
 		}
 
-		const jwtToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "1h" });
+		const jwtToken = signJwt({ userId: user._id }, { expiresIn: "1h" });
 		res.json({ message: "2FA verified, login successful", token: jwtToken });
 	} catch (error) {
 		res.status(500).json({ message: "Server error" });

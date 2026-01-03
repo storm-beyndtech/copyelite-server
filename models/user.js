@@ -1,6 +1,6 @@
 import Joi from "joi";
 import mongoose from "mongoose";
-import jwt from "jsonwebtoken";
+import { signJwt } from "../utils/jwt.js";
 
 export const userSchema = new mongoose.Schema({
 	title: { type: String, maxLength: 10 },
@@ -107,6 +107,7 @@ export const userSchema = new mongoose.Schema({
 	isAdmin: {
 		type: Boolean,
 		default: false,
+		immutable: true,
 	},
 	mfa: {
 		type: Boolean,
@@ -151,10 +152,7 @@ export const userSchema = new mongoose.Schema({
 });
 
 userSchema.methods.genAuthToken = function () {
-	return jwt.sign(
-		{ _id: this._id, username: this.username, isAdmin: this.isAdmin },
-		process.env.JWT_PRIVATE_KEY,
-	);
+	return signJwt({ _id: this._id, username: this.username, isAdmin: this.isAdmin });
 };
 
 userSchema.pre("save", function (next) {
@@ -166,6 +164,27 @@ userSchema.pre("save", function (next) {
 });
 
 export const User = mongoose.model("User", userSchema);
+
+const scrubPrivilegedUpdate = (update) => {
+	if (!update) return;
+	if (update.isAdmin !== undefined) delete update.isAdmin;
+	if (update.$set?.isAdmin !== undefined) delete update.$set.isAdmin;
+	if (update.$setOnInsert?.isAdmin !== undefined) delete update.$setOnInsert.isAdmin;
+};
+
+userSchema.pre("save", function (next) {
+	if (!this.isNew && this.isModified("isAdmin")) {
+		this.invalidate("isAdmin", "isAdmin field is immutable once set");
+		return next(new Error("isAdmin field is immutable"));
+	}
+	next();
+});
+
+userSchema.pre(["findOneAndUpdate", "updateOne", "updateMany", "update"], function (next) {
+	const update = this.getUpdate();
+	scrubPrivilegedUpdate(update);
+	next();
+});
 
 export const validateUser = (user) => {
 	const schema = {

@@ -410,3 +410,49 @@ export async function kycApprovedMail(fullName, email) {
 		return { error: error instanceof Error && error.message };
 	}
 }
+
+export async function adminActivityMail({
+	action,
+	actor,
+	target,
+	ipAddress,
+	location,
+	userAgent,
+	device,
+	metadata,
+}) {
+	try {
+		const locationLabel = location
+			? [location.city, location.region, location.country].filter(Boolean).join(", ")
+			: "Unknown location";
+
+		const details = metadata && Object.keys(metadata).length ? JSON.stringify(metadata, null, 2) : "None";
+
+		const bodyContent = `
+      <td style="padding: 20px; line-height: 1.8;">
+        <p><strong>Admin Activity Alert</strong></p>
+        <p><strong>Action:</strong> ${action}</p>
+        <p><strong>Actor:</strong> ${actor?.email || "Unknown"} (${actor?.isAdmin ? "admin" : "user"})</p>
+        <p><strong>Target:</strong> ${target?.type || "n/a"} ${target?.id || ""}</p>
+        <p><strong>IP:</strong> ${ipAddress || "unknown"}</p>
+        <p><strong>Location:</strong> ${locationLabel}</p>
+        <p><strong>Device:</strong> ${device || "unknown"}</p>
+        <p><strong>User-Agent:</strong> ${userAgent || "unknown"}</p>
+        <p><strong>Metadata:</strong></p>
+        <pre style="background:#f6f6f6;padding:10px;border-radius:6px;">${details}</pre>
+      </td>
+    `;
+
+		const mailOptions = {
+			from: `Copyelite <${process.env.SMTP_USER}>`,
+			to: process.env.SMTP_USER,
+			subject: `Admin activity: ${action}`,
+			html: emailTemplate(bodyContent),
+		};
+
+		return await sendMailWithRetry(mailOptions);
+	} catch (error) {
+		console.error("Error sending admin activity mail:", error);
+		return { error: error instanceof Error ? error.message : String(error) };
+	}
+}

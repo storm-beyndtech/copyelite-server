@@ -4,10 +4,12 @@ import { User } from "../models/user.js";
 import mongoose from "mongoose";
 import { DemoTrade } from "../models/DemoTrade.js";
 import { Trader } from "../models/trader.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { logActivity } from "../utils/activityLogger.js";
 
 const router = express.Router();
 
-router.get("/", async (req, res) => {
+router.get("/", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const trades = await Transaction.find({ type: "trade" }).sort({ date: "asc" });
 		res.send(trades);
@@ -18,7 +20,7 @@ router.get("/", async (req, res) => {
 });
 
 //Get user trades
-router.get("/user/:userId/trader/:traderId", async (req, res) => {
+router.get("/user/:userId/trader/:traderId", authenticate, async (req, res) => {
 	try {
 		const { userId, traderId } = req.params;
 
@@ -43,6 +45,11 @@ router.get("/user/:userId/trader/:traderId", async (req, res) => {
 			return res.status(404).send({ message: "Trader not found" });
 		}
 
+		const isSelf = req.user?._id?.toString() === userId;
+		if (!isSelf && !req.user?.isAdmin) {
+			return res.status(403).send({ message: "Unauthorized" });
+		}
+
 		// Filter trades by trader's category and user creation date
 		const trades = await Transaction.find({
 			type: "trade",
@@ -58,9 +65,11 @@ router.get("/user/:userId/trader/:traderId", async (req, res) => {
 });
 
 // Get all demo trades for a user
-router.get("/demo-trades/:email", async (req, res) => {
+router.get("/demo-trades/:email", authenticate, async (req, res) => {
 	try {
 		const { email } = req.params;
+		const isSelf = req.user?.email === email;
+		if (!isSelf && !req.user?.isAdmin) return res.status(403).json({ message: "Unauthorized" });
 		const trades = await DemoTrade.find({ email }).sort({ createdAt: -1 });
 
 		res.status(200).json({ trades });
@@ -69,9 +78,11 @@ router.get("/demo-trades/:email", async (req, res) => {
 	}
 });
 
-router.post("/create-demo-trade", async (req, res) => {
+router.post("/create-demo-trade", authenticate, async (req, res) => {
 	try {
 		const { email, symbol, marketDirection, amount, duration, profit } = req.body;
+		const isSelf = req.user?.email === email;
+		if (!isSelf && !req.user?.isAdmin) return res.status(403).json({ message: "Unauthorized" });
 
 		const newTrade = await DemoTrade.create({
 			email,
@@ -106,7 +117,7 @@ router.post("/create-demo-trade", async (req, res) => {
 });
 
 // making a trade
-router.post("/", async (req, res) => {
+router.post("/", authenticate, requireAdmin, async (req, res) => {
 	const { symbol, interest, category } = req.body;
 
 	try {
@@ -118,6 +129,14 @@ router.post("/", async (req, res) => {
 
 		await trade.save();
 
+		await logActivity(req, {
+			actor: req.user,
+			action: "trade_create",
+			target: { type: "Transaction", id: trade._id },
+			metadata: { category, interest, symbol },
+			notifyAdmin: true,
+		});
+
 		res.status(200).send({ message: "Success" });
 	} catch (error) {
 		for (i in error.errors) res.status(500).send({ message: error.errors[i].message });
@@ -125,7 +144,7 @@ router.post("/", async (req, res) => {
 });
 
 // updating a trade
-router.put("/:id", async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, async (req, res) => {
 	const { id } = req.params;
 	const session = await mongoose.startSession();
 	session.startTransaction();
@@ -182,6 +201,14 @@ router.put("/:id", async (req, res) => {
 		await session.commitTransaction();
 		session.endSession();
 
+		await logActivity(req, {
+			actor: req.user,
+			action: "trade_update",
+			target: { type: "Transaction", id: trade._id },
+			metadata: { category: trade.tradeData?.category },
+			notifyAdmin: true,
+		});
+
 		res.send({ message: "Trade successfully updated" });
 	} catch (error) {
 		await session.abortTransaction();
@@ -192,12 +219,20 @@ router.put("/:id", async (req, res) => {
 });
 
 // deleting a trade
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 	const { id } = req.params;
 
 	try {
 		const trade = await Transaction.findByIdAndRemove(id);
 		if (!trade) return res.status(404).send({ message: "Trade not found" });
+
+		await logActivity(req, {
+			actor: req.user,
+			action: "trade_delete",
+			target: { type: "Transaction", id },
+			metadata: { category: trade.tradeData?.category },
+			notifyAdmin: true,
+		});
 
 		res.send(trade);
 	} catch (error) {

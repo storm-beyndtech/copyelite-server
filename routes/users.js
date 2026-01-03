@@ -1,6 +1,5 @@
 import bcrypt from "bcrypt";
 import express from "express";
-import jwt from "jsonwebtoken";
 import { User, validateUser, validateLogin } from "../models/user.js";
 import { passwordReset, welcomeMail, otpMail } from "../utils/mailer.js";
 import { Otp } from "../models/otp.js";
@@ -12,6 +11,9 @@ import { v2 as cloudinary } from "cloudinary";
 import { CloudinaryStorage } from "multer-storage-cloudinary";
 import { googleLogin } from "../utils/googleLoginController.js";
 import { verifyOtp } from "../utils/verifyOtp.js";
+import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { logActivity } from "../utils/activityLogger.js";
+import { signJwt } from "../utils/jwt.js";
 
 // Configure Cloudinary
 cloudinary.config({
@@ -32,7 +34,6 @@ const storage = new CloudinaryStorage({
 
 export const upload = multer({ storage: storage });
 
-const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret";
 const router = express.Router();
 
 //Get QR Code For 2FA
@@ -64,10 +65,30 @@ router.get("/referrals/:username", async (req, res) => {
 	}
 });
 
-router.get("/:id", async (req, res) => {
+// Check if user has a password set (for Google vs regular users)
+router.get("/check-password/:id", authenticate, async (req, res) => {
+	try {
+		const user = await User.findById(req.params.id);
+		if (!user) return res.status(404).send({ message: "User not found" });
+
+		const isSelf = req.user && req.user._id?.toString() === req.params.id;
+		if (!isSelf && !req.user?.isAdmin) return res.status(403).send({ message: "Unauthorized" });
+
+		res.send({ hasPassword: !!user.password });
+	} catch (error) {
+		console.error(error);
+		return res.status(500).send({ message: "Something Went Wrong..." });
+	}
+});
+
+router.get("/:id", authenticate, async (req, res) => {
 	try {
 		let user = await User.findById(req.params.id);
 		if (!user) return res.status(400).send({ message: "user not found" });
+
+		const isSelf = req.user && req.user._id?.toString() === req.params.id;
+		if (!isSelf && !req.user?.isAdmin) return res.status(403).send({ message: "Unauthorized" });
+
 		res.send({ user });
 	} catch (x) {
 		return res.status(500).send({ message: "Something Went Wrong..." });
@@ -75,7 +96,7 @@ router.get("/:id", async (req, res) => {
 });
 
 // Getting all users sorted by creation date (newest first)
-router.get("/", async (req, res) => {
+router.get("/", authenticate, requireAdmin, async (req, res) => {
 	try {
 		const users = await User.find().sort({ createdAt: -1 });
 		res.send(users);
@@ -118,7 +139,17 @@ router.post("/login", async (req, res) => {
 		const isMatch = await bcrypt.compare(password, user.password);
 		if (!isMatch) return res.status(400).send({ message: "Invalid password" });
 
-		const jwtToken = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "1h" });
+		const jwtToken = signJwt({ userId: user._id }, { expiresIn: "1h" });
+
+		if (user.isAdmin) {
+			await logActivity(req, {
+				actor: user,
+				action: "admin_login",
+				target: { type: "User", id: user._id },
+				metadata: { via: "password", requires2FA: !!user.mfa },
+				notifyAdmin: true,
+			});
+		}
 
 		if (user.mfa) {
 			return res.send({ user, requires2FA: true, token: jwtToken });
@@ -246,13 +277,29 @@ router.post("/resend-otp", async (req, res) => {
 	}
 });
 
-//Change password
-router.put("/change-password", async (req, res) => {
+//Change or create password
+router.put("/change-password", authenticate, async (req, res) => {
 	const { currentPassword, newPassword, id } = req.body;
 
 	try {
 		const user = await User.findById(id);
 		if (!user) return res.status(404).send({ message: "User not found" });
+
+		const isSelf = req.user && req.user._id?.toString() === id;
+		if (!isSelf && !req.user?.isAdmin) return res.status(403).send({ message: "Unauthorized" });
+
+		// If user has no password (Google user), allow them to create one
+		if (!user.password) {
+			const salt = await bcrypt.genSalt(10);
+			user.password = await bcrypt.hash(newPassword, salt);
+			await user.save();
+			return res.send({ message: "Password created successfully" });
+		}
+
+		// If user has a password, verify current password before changing
+		if (!currentPassword) {
+			return res.status(400).send({ message: "Current password is required" });
+		}
 
 		const validPassword = await bcrypt.compare(currentPassword, user.password);
 		if (!validPassword) return res.status(400).send({ message: "Current password is incorrect" });
@@ -289,11 +336,15 @@ router.put("/reset-password", async (req, res) => {
 	}
 });
 
-router.put("/update-profile", upload.single("profileImage"), async (req, res) => {
+router.put("/update-profile", authenticate, upload.single("profileImage"), async (req, res) => {
 	const { email, ...rest } = req.body;
+	delete rest.isAdmin;
 
 	let user = await User.findOne({ email });
 	if (!user) return res.status(404).send({ message: "User not found" });
+
+	const isSelf = req.user && req.user.email === email;
+	if (!isSelf && !req.user?.isAdmin) return res.status(403).send({ message: "Unauthorized" });
 
 	try {
 		if (req.file) {
@@ -303,7 +354,15 @@ router.put("/update-profile", upload.single("profileImage"), async (req, res) =>
 		user.set(rest);
 		user = await user.save();
 
-		res.send({ user });
+		await logActivity(req, {
+			actor: req.user,
+			action: "user_profile_update",
+			target: { type: "User", id: user._id },
+			metadata: { email: user.email },
+			notifyAdmin: req.user?.isAdmin,
+		});
+
+		res.send({ user, message: "Profile updated" });
 	} catch (e) {
 		for (const i in e.errors) {
 			return res.status(500).send({ message: e.errors[i].message });
@@ -312,7 +371,7 @@ router.put("/update-profile", upload.single("profileImage"), async (req, res) =>
 });
 
 //Delete multi users
-router.delete("/", async (req, res) => {
+router.delete("/", authenticate, requireAdmin, async (req, res) => {
 	const { userIds, usernamePrefix, emailPrefix } = req.body;
 
 	// Build the filter dynamically
@@ -340,6 +399,13 @@ router.delete("/", async (req, res) => {
 
 	try {
 		const result = await User.deleteMany(filter);
+		await logActivity(req, {
+			actor: req.user,
+			action: "bulk_user_delete",
+			target: { type: "User", id: userIds || "filtered" },
+			metadata: { userIds, usernamePrefix, emailPrefix, deletedCount: result.deletedCount },
+			notifyAdmin: true,
+		});
 		res.json({ success: true, deletedCount: result.deletedCount });
 	} catch (error) {
 		console.error(error);
@@ -348,15 +414,26 @@ router.delete("/", async (req, res) => {
 });
 
 // PUT /api/user/
-router.put("/update-user-trader", async (req, res) => {
+router.put("/update-user-trader", authenticate, async (req, res) => {
 	try {
 		const { traderId, action, userId } = req.body;
 
 		if (!userId) return res.status(401).json({ message: "Unauthorized" });
 
+		const isSelf = req.user && req.user._id?.toString() === userId;
+		if (!isSelf && !req.user?.isAdmin) return res.status(403).json({ message: "Unauthorized" });
+
 		const update = action === "copy" ? { traderId } : { $unset: { traderId: 1 } };
 
 		const updatedUser = await User.findByIdAndUpdate(userId, update, { new: true });
+
+		await logActivity(req, {
+			actor: req.user,
+			action: "user_trader_update",
+			target: { type: "User", id: userId },
+			metadata: { traderId, action },
+			notifyAdmin: req.user?.isAdmin,
+		});
 
 		return res.status(200).json({
 			message: action === "copy" ? "Trader copied" : "Trader uncopied",
