@@ -7,7 +7,7 @@ import { logActivity } from "../utils/activityLogger.js";
 const router = express.Router();
 
 // getting all utils
-router.get("/", async (req, res) => {
+router.get("/", authenticate, async (req, res) => {
 	try {
 		const utils = await Util.find();
 		res.send(utils[0]);
